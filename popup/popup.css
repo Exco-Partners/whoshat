@@ -1,0 +1,288 @@
+:root {
+  --bg: #ffffff;
+  --fg: #14181f;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --hover: #f3f4f6;
+  --accent: #2563eb;
+  --danger: #dc2626;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16191f;
+    --fg: #e8eaed;
+    --muted: #9aa1ab;
+    --line: #2b2f36;
+    --hover: #21252c;
+    --accent: #60a5fa;
+    --danger: #f87171;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  width: 320px;
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.4 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+h1 { margin: 0; font-size: 13px; font-weight: 650; letter-spacing: 0.01em; }
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.footer {
+  border-bottom: 0;
+  border-top: 1px solid var(--line);
+}
+
+.status {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status.on { color: var(--fg); font-weight: 600; }
+
+.notice {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--hover);
+  border-bottom: 1px solid var(--line);
+}
+
+/* --- persona list --------------------------------------------------------- */
+
+.personas {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+}
+.row:hover { background: var(--hover); }
+
+.row .pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.row.active { background: var(--hover); }
+.row.active .name::after {
+  content: "Active";
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+.dot {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+}
+img.dot { object-fit: cover; }
+
+.meta { min-width: 0; }
+.name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.role {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-btn {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin-right: 6px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+.icon-btn:hover { background: var(--line); color: var(--fg); }
+
+.empty {
+  margin: 0;
+  padding: 28px 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* --- buttons -------------------------------------------------------------- */
+
+.btn {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) { background: var(--hover); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+.btn.ghost { background: none; }
+.btn.danger { color: var(--danger); border-color: var(--danger); background: none; }
+.btn.small { padding: 4px 9px; font-size: 12px; }
+
+.footer .btn:last-child { margin-left: auto; }
+.form .footer .btn:last-child { margin-left: 0; }
+.spacer { flex: 1; }
+
+/* --- form ----------------------------------------------------------------- */
+
+.form { display: block; }
+
+.field {
+  display: block;
+  padding: 10px 12px 0;
+}
+.field > span {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.field em { font-style: normal; text-transform: none; letter-spacing: 0; }
+
+input[type="text"] {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 5px;
+}
+.swatch {
+  aspect-ratio: 1;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+.swatch[aria-pressed="true"] {
+  border-color: var(--fg);
+  box-shadow: inset 0 0 0 2px var(--bg);
+}
+
+.custom-colour {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+input[type="color"] {
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+
+.avatar-row { display: flex; align-items: center; gap: 10px; }
+.avatar-preview {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px dashed var(--line);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+}
+.avatar-preview img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-actions { display: flex; gap: 6px; }
+
+.error { margin: 6px 0 0; font-size: 11px; color: var(--danger); }
+
+.form .footer { margin-top: 12px; gap: 6px; }
+
+/* --- delete confirmation -------------------------------------------------- */
+
+.confirm {
+  padding: 12px;
+  border-top: 1px solid var(--line);
+  background: var(--hover);
+}
+.confirm p { margin: 0 0 10px; font-size: 12px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }

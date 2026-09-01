@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>Who's Hat</title>
+  </head>
+  <body>
+    <!-- List view -->
+    <section id="view-list">
+      <header class="bar">
+        <h1>Who's Hat</h1>
+        <span id="status" class="status">No persona</span>
+      </header>
+
+      <div id="unsupported" class="notice" hidden>
+        This page can't be marked (Chrome blocks extensions on internal pages).
+      </div>
+
+      <ul id="personas" class="personas"></ul>
+
+      <p id="empty" class="empty" hidden>
+        No personas yet.<br />Add one to start marking tabs.
+      </p>
+
+      <footer class="bar footer">
+        <button id="deactivate" class="btn ghost" disabled>Deactivate</button>
+        <button id="add" class="btn primary">+ Add persona</button>
+      </footer>
+    </section>
+
+    <!-- Add / edit view -->
+    <section id="view-edit" hidden>
+      <header class="bar">
+        <button id="back" class="icon-btn" title="Back" aria-label="Back">&#8592;</button>
+        <h1 id="edit-title">New persona</h1>
+      </header>
+
+      <form id="form" class="form">
+        <label class="field">
+          <span>Name</span>
+          <input id="f-name" type="text" maxlength="40" required placeholder="Jane Smith" />
+        </label>
+
+        <label class="field">
+          <span>Role</span>
+          <input id="f-role" type="text" maxlength="40" placeholder="Approver" />
+        </label>
+
+        <div class="field">
+          <span>Colour</span>
+          <div class="swatches" id="swatches"></div>
+          <label class="custom-colour">
+            <input id="f-colour" type="color" value="#3b82f6" />
+            <span id="colour-hex">#3b82f6</span>
+          </label>
+        </div>
+
+        <div class="field">
+          <span>Avatar <em>(optional)</em></span>
+          <div class="avatar-row">
+            <div id="avatar-preview" class="avatar-preview"></div>
+            <div class="avatar-actions">
+              <input id="f-avatar" type="file" accept="image/*" hidden />
+              <button type="button" id="choose-avatar" class="btn small">Choose image…</button>
+              <button type="button" id="clear-avatar" class="btn small ghost" hidden>Remove</button>
+            </div>
+          </div>
+          <p id="avatar-error" class="error" hidden></p>
+        </div>
+
+        <footer class="bar footer">
+          <button type="button" id="delete" class="btn danger" hidden>Delete</button>
+          <span class="spacer"></span>
+          <button type="button" id="cancel" class="btn ghost">Cancel</button>
+          <button type="submit" class="btn primary">Save</button>
+        </footer>
+      </form>
+
+      <div id="confirm-delete" class="confirm" hidden>
+        <p>Delete this persona? Tabs using it will be cleared.</p>
+        <div class="confirm-actions">
+          <button type="button" id="confirm-no" class="btn ghost">Cancel</button>
+          <button type="button" id="confirm-yes" class="btn danger">Delete</button>
+        </div>
+      </div>
+    </section>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
