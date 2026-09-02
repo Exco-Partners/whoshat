@@ -2,6 +2,10 @@
 
 Who's Hat is a Chrome Extension that is designed to help with live demos of web application. What is often difficult for people to follow in live demo's is the persona of the person that is being represented in the demo. The person running the demo often switches tabs and jumps around quickly and for the person watching, its hard to see who is who.
 
+![Who's Hat activating a persona on a browser tab](docs/demo-screenshot.png)
+
+*An activated tab: a coloured frame around the page, with the persona's avatar, name and role in a notch at the top.*
+
 This Extension will let a User setup any number of "Personas". 
 
 Each "Persona" will be defined with:
