@@ -75,7 +75,10 @@ function renderList() {
 
     const pick = document.createElement('button');
     pick.className = 'pick';
-    pick.title = p.id === activePersonaId ? 'Active on this tab' : `Activate ${p.name} on this tab`;
+    pick.title =
+      p.id === activePersonaId ? 'Active on this tab'
+      : p.startPage ? `Open ${p.startPage} in a new tab as ${p.name}`
+      : `Activate ${p.name} on this tab`;
     pick.append(avatarNode(p), metaNode(p));
     pick.addEventListener('click', () => activate(p));
 
@@ -129,6 +132,28 @@ function metaNode(p) {
 }
 
 async function activate(p) {
+  // A persona with a start page gets a fresh tab of its own. The worker does
+  // the work, since Chrome closes the popup as soon as the new tab takes focus.
+  // So if we are still here to read the reply, something went wrong.
+  if (p.startPage && p.id !== activePersonaId) {
+    const res = await chrome.runtime
+      .sendMessage({
+        type: 'OPEN_START_PAGE',
+        personaId: p.id,
+        windowId: tab?.windowId,
+        index: tab ? tab.index + 1 : undefined
+      })
+      .catch(() => null);
+    if (!res?.tabId) {
+      const s = $('status');
+      // No reply at all usually means a stale worker from before an update.
+      s.textContent = res?.error ? "Couldn't open start page" : 'Reload the extension';
+      s.title = res?.error || 'The background worker did not respond. Reload Who\'s Hat on chrome://extensions.';
+      s.classList.remove('on');
+    }
+    return;
+  }
+
   if (!tab) return;
   // Clicking the persona already on this tab toggles it off.
   const next = p.id === activePersonaId ? null : p.id;
@@ -148,6 +173,19 @@ async function activate(p) {
 }
 
 // --- edit view ---------------------------------------------------------------
+
+// Accepts "app.example.com" or "localhost:3000" as well as full URLs.
+// Returns '' for blank, null for anything we wouldn't want to open.
+function normaliseStartPage(raw) {
+  const s = raw.trim();
+  if (!s) return '';
+  try {
+    const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(s) ? s : 'https://' + s);
+    return /^(https?|file):$/.test(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
 
 function buildSwatches() {
   const wrap = $('swatches');
@@ -184,11 +222,14 @@ function hexToRgb(hex) {
 function openEditor(persona) {
   draft = persona
     ? { ...persona }
-    : { id: newId(), name: '', role: '', color: SWATCHES[Math.floor(Math.random() * SWATCHES.length)], avatar: null };
+    : { id: newId(), name: '', role: '', narrative: '', color: SWATCHES[Math.floor(Math.random() * SWATCHES.length)], avatar: null, startPage: '' };
 
   $('edit-title').textContent = persona ? 'Edit persona' : 'New persona';
   $('f-name').value = draft.name;
   $('f-role').value = draft.role || '';
+  $('f-narrative').value = draft.narrative || '';
+  $('f-start').value = draft.startPage || '';
+  $('start-error').hidden = true;
   $('delete').hidden = !persona;
   $('confirm-delete').hidden = true;
   $('avatar-error').hidden = true;
@@ -281,7 +322,19 @@ function wire() {
     e.preventDefault();
     draft.name = $('f-name').value.trim();
     draft.role = $('f-role').value.trim();
+    draft.narrative = $('f-narrative').value.trim();
     if (!draft.name) return;
+
+    const startPage = normaliseStartPage($('f-start').value);
+    const startErr = $('start-error');
+    if (startPage === null) {
+      startErr.textContent = 'Enter a web address, e.g. https://app.example.com';
+      startErr.hidden = false;
+      $('f-start').focus();
+      return;
+    }
+    startErr.hidden = true;
+    draft.startPage = startPage;
 
     await upsertPersona(draft);
     personas = await getPersonas();

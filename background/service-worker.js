@@ -91,6 +91,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
 
+      // Persona with a start page picked: open it in a new tab wearing the persona.
+      case 'OPEN_START_PAGE': {
+        const persona = await getPersona(msg.personaId);
+        if (!persona?.startPage) {
+          sendResponse({});
+          return;
+        }
+        // Open blank, assign, then navigate. If the tab were created straight
+        // at the URL, the page's content script could ask for GET_STATE before
+        // the assignment lands and boot without the overlay.
+        try {
+          const tab = await chrome.tabs.create({
+            url: 'about:blank',
+            active: true,
+            windowId: msg.windowId,
+            index: msg.index
+          });
+          await assignTab(tab.id, persona.id);
+          await chrome.tabs.update(tab.id, { url: persona.startPage });
+          sendResponse({ tabId: tab.id });
+        } catch (err) {
+          console.warn('[WhosHat] could not open start page', err);
+          sendResponse({ error: String(err?.message || err) });
+        }
+        return;
+      }
+
       case 'DEACTIVATE': {
         await assignTab(msg.tabId, null);
         await paintTab(msg.tabId, null);
