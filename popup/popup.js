@@ -222,12 +222,13 @@ function hexToRgb(hex) {
 function openEditor(persona) {
   draft = persona
     ? { ...persona }
-    : { id: newId(), name: '', role: '', narrative: '', color: SWATCHES[Math.floor(Math.random() * SWATCHES.length)], avatar: null, startPage: '' };
+    : { id: newId(), name: '', role: '', narrative: '', color: SWATCHES[Math.floor(Math.random() * SWATCHES.length)], avatar: null, startPage: '', introClick: false };
 
   $('edit-title').textContent = persona ? 'Edit persona' : 'New persona';
   $('f-name').value = draft.name;
   $('f-role').value = draft.role || '';
   $('f-narrative').value = draft.narrative || '';
+  $('f-intro-click').checked = Boolean(draft.introClick);
   $('f-start').value = draft.startPage || '';
   $('start-error').hidden = true;
   $('delete').hidden = !persona;
@@ -323,6 +324,7 @@ function wire() {
     draft.name = $('f-name').value.trim();
     draft.role = $('f-role').value.trim();
     draft.narrative = $('f-narrative').value.trim();
+    draft.introClick = $('f-intro-click').checked;
     if (!draft.name) return;
 
     const startPage = normaliseStartPage($('f-start').value);

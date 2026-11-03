@@ -3,7 +3,8 @@
  *
  * Draws a coloured frame around the viewport plus a notch at top centre naming
  * the persona this tab represents, and an optional narrative bar along the
- * bottom edge.
+ * bottom edge. When a persona is first switched on, a full-window shade in the
+ * persona's colour introduces it, then fades away (or waits for a click).
  *
  * Getting on top of arbitrary pages is the whole difficulty here:
  *
@@ -37,11 +38,15 @@
   }
 
   const BORDER = 6; // px, per spec
+  const SHADE_HOLD = 2500; // ms the intro shade stays up when not click-to-dismiss
+  const SHADE_FADE = 600; // ms
 
   let host = null;
   let shadow = null;
   let els = null;
   let current = null;
+  let shade = null;
+  let shadeTimer = null;
   let observer = null;
   let barObserver = null;
   let reserved = null; // { px, shell, saved, observer } while space is held
@@ -180,6 +185,79 @@
       pointer-events: none;
     }
     .narrative:empty { display: none; }
+
+    /* Intro shade: covers the whole window, frame and all. It takes pointer
+       events (unlike everything else here) so a click can dismiss it and the
+       page underneath can't be clicked while it is up. */
+    .shade {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 48px;
+      background: var(--wh-color);
+      color: var(--wh-text);
+      text-align: center;
+      font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      pointer-events: auto;
+      cursor: pointer;
+      opacity: 1;
+      transition: opacity ${SHADE_FADE}ms ease;
+    }
+    .shade.out { opacity: 0; pointer-events: none; }
+
+    .shade-avatar {
+      width: 140px;
+      height: 140px;
+      margin-bottom: 12px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: rgba(255, 255, 255, 0.22);
+      box-shadow: 0 6px 30px rgba(0, 0, 0, 0.25);
+      display: grid;
+      place-items: center;
+      font-size: 52px;
+      font-weight: 700;
+      overflow: hidden;
+    }
+    img.shade-avatar { display: block; }
+
+    .shade-name {
+      font-size: clamp(32px, 6vw, 64px);
+      font-weight: 700;
+      line-height: 1.1;
+      max-width: 90vw;
+      overflow-wrap: anywhere;
+    }
+    .shade-role {
+      font-size: clamp(18px, 3vw, 30px);
+      font-weight: 500;
+      opacity: 0.85;
+      max-width: 90vw;
+      overflow-wrap: anywhere;
+    }
+    .shade-narrative {
+      margin-top: 12px;
+      max-width: 60ch;
+      font-size: clamp(16px, 2.2vw, 22px);
+      line-height: 1.4;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      opacity: 0.92;
+    }
+    .shade-hint {
+      position: absolute;
+      bottom: 32px;
+      font-size: 14px;
+      opacity: 0.7;
+    }
+    .shade-role:empty,
+    .shade-narrative:empty { display: none; }
+
+    @media (prefers-reduced-motion: reduce) { .shade { transition: none; } }
 
     @media print { :host { display: none; } }
   `;
@@ -383,20 +461,94 @@
     if (current && host?.isConnected) promote();
   }
 
-  function renderAvatar(persona) {
-    const next = document.createElement(persona.avatar ? 'img' : 'span');
-    next.className = 'avatar';
+  function avatarEl(persona, className) {
+    const el = document.createElement(persona.avatar ? 'img' : 'span');
+    el.className = className;
     if (persona.avatar) {
-      next.src = persona.avatar;
-      next.alt = '';
+      el.src = persona.avatar;
+      el.alt = '';
     } else {
-      next.textContent = initials(persona.name);
+      el.textContent = initials(persona.name);
     }
+    return el;
+  }
+
+  function renderAvatar(persona) {
+    const next = avatarEl(persona, 'avatar');
     els.avatar.replaceWith(next);
     els.avatar = next;
   }
 
-  function apply(persona) {
+  // --- intro shade -----------------------------------------------------------
+
+  function showShade(persona) {
+    removeShade();
+
+    const el = document.createElement('div');
+    el.className = 'shade';
+    const text = (className, value) => {
+      const d = document.createElement('div');
+      d.className = className;
+      d.textContent = value || '';
+      return d;
+    };
+    el.append(
+      avatarEl(persona, 'shade-avatar'),
+      text('shade-name', persona.name),
+      text('shade-role', persona.role),
+      text('shade-narrative', persona.narrative),
+      text('shade-hint', persona.introClick ? 'Click anywhere to continue' : '')
+    );
+    el.addEventListener('click', dismissShade);
+    shadow.append(el);
+    shade = el;
+
+    // Capture phase, so the keys a presenter's clicker sends dismiss the shade
+    // without also reaching the page underneath.
+    document.addEventListener('keydown', onShadeKey, true);
+    if (!persona.introClick) shadeTimer = setTimeout(dismissShade, SHADE_HOLD);
+  }
+
+  function onShadeKey(e) {
+    if (e.key !== 'Escape' && e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    e.stopPropagation();
+    dismissShade();
+  }
+
+  function dismissShade() {
+    if (!shade || shade.classList.contains('out')) return;
+    clearTimeout(shadeTimer);
+    document.removeEventListener('keydown', onShadeKey, true);
+
+    const el = shade;
+    el.classList.add('out');
+    const done = () => {
+      el.remove();
+      if (shade === el) shade = null;
+    };
+    el.addEventListener('transitionend', done, { once: true });
+    setTimeout(done, SHADE_FADE + 100); // transitionend never fires under reduced motion
+
+    // Tell the worker the intro has been seen, so it doesn't come back on the
+    // next navigation.
+    try {
+      chrome.runtime.sendMessage({ type: 'INTRO_DONE' }).catch(() => {});
+    } catch {
+      // Context invalidated.
+    }
+  }
+
+  // Drop the shade on the spot, without telling the worker (deactivated, or
+  // being replaced by a fresh one).
+  function removeShade() {
+    clearTimeout(shadeTimer);
+    document.removeEventListener('keydown', onShadeKey, true);
+    shade?.remove();
+    shade = null;
+  }
+
+  function apply(persona, intro = false) {
     if (!persona) return clear();
     if (!host) build();
 
@@ -411,10 +563,12 @@
     renderAvatar(persona);
 
     attach();
+    if (intro) showShade(persona);
   }
 
   function clear() {
     current = null;
+    removeShade();
     releaseSpace();
     if (!host) return;
     try {
@@ -426,7 +580,7 @@
   }
 
   function onMessage(msg) {
-    if (msg?.type === 'APPLY') apply(msg.persona);
+    if (msg?.type === 'APPLY') apply(msg.persona, msg.intro);
     else if (msg?.type === 'CLEAR') clear();
   }
 
@@ -454,7 +608,7 @@
   chrome.runtime
     .sendMessage({ type: 'GET_STATE' })
     .then((res) => {
-      if (res?.persona) apply(res.persona);
+      if (res?.persona) apply(res.persona, res.intro);
     })
     .catch(() => {});
 })();

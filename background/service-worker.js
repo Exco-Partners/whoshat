@@ -13,6 +13,24 @@ import {
   assignTab
 } from '../shared/personas.js';
 
+// Tabs owed an intro shade. Set when a persona is switched on, cleared when the
+// page reports the shade dismissed -- not when it is first shown, so a redirect
+// mid-intro (a sign-in bounce, say) shows it again instead of losing it.
+const INTRO_KEY = 'introPending';
+
+async function getIntroPending(tabId) {
+  const { [INTRO_KEY]: map } = await chrome.storage.session.get(INTRO_KEY);
+  return Boolean(map?.[tabId]);
+}
+
+async function setIntroPending(tabId, on) {
+  const { [INTRO_KEY]: map = {} } = await chrome.storage.session.get(INTRO_KEY);
+  if (on) map[tabId] = true;
+  else if (map[tabId]) delete map[tabId];
+  else return;
+  await chrome.storage.session.set({ [INTRO_KEY]: map });
+}
+
 async function getTabPersona(tabId) {
   const map = await getTabMap();
   return getPersona(map[tabId]);
@@ -43,9 +61,9 @@ async function pushToTab(tabId, message) {
   }
 }
 
-async function paintTab(tabId, persona) {
+async function paintTab(tabId, persona, intro = false) {
   const [applied] = await Promise.all([
-    pushToTab(tabId, persona ? { type: 'APPLY', persona } : { type: 'CLEAR' }),
+    pushToTab(tabId, persona ? { type: 'APPLY', persona, intro } : { type: 'CLEAR' }),
     paintBadge(tabId, persona)
   ]);
   return applied;
@@ -79,14 +97,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const tabId = sender.tab?.id;
         const persona = tabId == null ? null : await getTabPersona(tabId);
         if (tabId != null) await paintBadge(tabId, persona);
-        sendResponse({ persona });
+        const intro = Boolean(persona) && (await getIntroPending(tabId));
+        sendResponse({ persona, intro });
         return;
       }
 
       case 'ACTIVATE': {
         await assignTab(msg.tabId, msg.personaId);
+        await setIntroPending(msg.tabId, true);
         const persona = await getPersona(msg.personaId);
-        const applied = await paintTab(msg.tabId, persona);
+        const applied = await paintTab(msg.tabId, persona, true);
         sendResponse({ persona, applied });
         return;
       }
@@ -109,6 +129,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             index: msg.index
           });
           await assignTab(tab.id, persona.id);
+          await setIntroPending(tab.id, true);
           await chrome.tabs.update(tab.id, { url: persona.startPage });
           sendResponse({ tabId: tab.id });
         } catch (err) {
@@ -118,8 +139,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
 
+      // The page faded its intro shade out (or the presenter clicked it away).
+      case 'INTRO_DONE': {
+        if (sender.tab?.id != null) await setIntroPending(sender.tab.id, false);
+        sendResponse({});
+        return;
+      }
+
       case 'DEACTIVATE': {
         await assignTab(msg.tabId, null);
+        await setIntroPending(msg.tabId, false);
         await paintTab(msg.tabId, null);
         sendResponse({ persona: null });
         return;
@@ -136,6 +165,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // A tab closed: drop its assignment so ids are not reused by a future tab.
 chrome.tabs.onRemoved.addListener(async (tabId) => {
+  await setIntroPending(tabId, false);
   const map = await getTabMap();
   if (map[tabId]) {
     delete map[tabId];
@@ -170,4 +200,4 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
 });
 
 // Nothing carries over from a previous browser session.
-chrome.runtime.onStartup.addListener(() => chrome.storage.session.remove(TAB_MAP_KEY));
+chrome.runtime.onStartup.addListener(() => chrome.storage.session.remove([TAB_MAP_KEY, INTRO_KEY]));

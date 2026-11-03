@@ -12,6 +12,7 @@ Each "Persona" will be defined with:
 - Name
 - Role
 - An optional narrative
+- Whether the intro shade needs a click to dismiss
 - Colour
 - Upload an optional avatar image
 - An optional start page
@@ -30,6 +31,8 @@ If a persona has a start page, picking it opens a new tab next to the current on
 When activated, a persona will be applied to the current tab only. Each tab can be activated with a different persona so each tab can represent a different persona and be clearly visible.
 
 When activated a 6 pixel border will be shown around the entire inner tab window, such that the web page is shown within the border. In the top middle the persona name will be shown in a notch style box embedded in the border. The avatar image will also be shown in the notch to the left of the name.
+
+When a persona is switched on, the whole window is first covered by a shade in the persona's colour showing the avatar, name, role and narrative in large type. It fades away after a few seconds, or, if the persona has "Require a click to dismiss" ticked, stays until the presenter clicks (or presses Esc, Enter or Space). It shows again after a page reload until it has been dismissed.
 
 If the persona has a narrative, it is shown in a bar of the persona's colour across the bottom of the tab (up to three lines). The page is made to end above the bar so nothing is hidden underneath: ordinary pages get bottom padding they can scroll into, and app-style pages that scroll inside a panel are shortened by the bar's height.
 
