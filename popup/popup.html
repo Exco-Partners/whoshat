@@ -39,13 +39,26 @@
       <form id="form" class="form">
         <label class="field">
           <span>Name</span>
-          <input id="f-name" type="text" maxlength="40" required placeholder="Jane Smith" />
+          <input id="f-name" type="text" maxlength="80" required placeholder="Jane Smith" />
         </label>
 
         <label class="field">
           <span>Role</span>
-          <input id="f-role" type="text" maxlength="40" placeholder="Approver" />
+          <input id="f-role" type="text" maxlength="80" placeholder="Approver" />
         </label>
+
+        <label class="field">
+          <span>Narrative <em>(optional)</em></span>
+          <textarea id="f-narrative" rows="3" maxlength="500"
+                    placeholder="Approves leave requests for the Melbourne office"></textarea>
+        </label>
+
+        <div class="field">
+          <span>Start page <em>(optional)</em></span>
+          <input id="f-start" type="text" maxlength="2048" spellcheck="false" autocomplete="off"
+                 aria-label="Start page" placeholder="https://app.example.com" />
+          <p id="start-error" class="error" hidden></p>
+        </div>
 
         <div class="field">
           <span>Colour</span>
@@ -67,6 +80,14 @@
             </div>
           </div>
           <p id="avatar-error" class="error" hidden></p>
+        </div>
+
+        <div class="field">
+          <span>Intro shade</span>
+          <label class="check">
+            <input id="f-intro-click" type="checkbox" />
+            <span>Require a click to dismiss <em>(otherwise it fades after a few seconds)</em></span>
+          </label>
         </div>
 
         <footer class="bar footer">

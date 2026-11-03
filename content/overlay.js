@@ -2,7 +2,9 @@
  * Who's Hat overlay.
  *
  * Draws a coloured frame around the viewport plus a notch at top centre naming
- * the persona this tab represents.
+ * the persona this tab represents, and an optional narrative bar along the
+ * bottom edge. When a persona is first switched on, a full-window shade in the
+ * persona's colour introduces it, then fades away (or waits for a click).
  *
  * Getting on top of arbitrary pages is the whole difficulty here:
  *
@@ -16,6 +18,8 @@
  *    as a fallback for when showPopover() is unavailable.
  *  - Everything is pointer-events:none, so it never swallows a click -- which
  *    matters, because the frame covers the scrollbar.
+ *  - The narrative bar cannot shrink the viewport, so the page is made to end
+ *    above it instead. See reserveSpace() for how.
  */
 (() => {
   // chrome.runtime is undefined in a content script whose extension context has
@@ -34,12 +38,18 @@
   }
 
   const BORDER = 6; // px, per spec
+  const SHADE_HOLD = 2500; // ms the intro shade stays up when not click-to-dismiss
+  const SHADE_FADE = 600; // ms
 
   let host = null;
   let shadow = null;
   let els = null;
   let current = null;
+  let shade = null;
+  let shadeTimer = null;
   let observer = null;
+  let barObserver = null;
+  let reserved = null; // { px, shell, saved, observer } while space is held
 
   // Mirror of readableTextColor() in shared/personas.js -- content scripts
   // cannot import modules, so keep the two in sync.
@@ -105,7 +115,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      max-width: min(60vw, 520px);
+      max-width: min(70vw, 720px);
       padding: 5px 16px 6px 10px;
       background: var(--wh-color);
       color: var(--wh-text);
@@ -152,6 +162,103 @@
     }
     .role:empty { display: none; }
 
+    .narrative {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 6px 16px ${BORDER + 2}px;
+      background: var(--wh-color);
+      color: var(--wh-text);
+      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.28);
+      font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.35;
+      text-align: center;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .narrative:empty { display: none; }
+
+    /* Intro shade: covers the whole window, frame and all. It takes pointer
+       events (unlike everything else here) so a click can dismiss it and the
+       page underneath can't be clicked while it is up. */
+    .shade {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 48px;
+      background: var(--wh-color);
+      color: var(--wh-text);
+      text-align: center;
+      font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      pointer-events: auto;
+      cursor: pointer;
+      opacity: 1;
+      transition: opacity ${SHADE_FADE}ms ease;
+    }
+    .shade.out { opacity: 0; pointer-events: none; }
+
+    .shade-avatar {
+      width: 140px;
+      height: 140px;
+      margin-bottom: 12px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: rgba(255, 255, 255, 0.22);
+      box-shadow: 0 6px 30px rgba(0, 0, 0, 0.25);
+      display: grid;
+      place-items: center;
+      font-size: 52px;
+      font-weight: 700;
+      overflow: hidden;
+    }
+    img.shade-avatar { display: block; }
+
+    .shade-name {
+      font-size: clamp(32px, 6vw, 64px);
+      font-weight: 700;
+      line-height: 1.1;
+      max-width: 90vw;
+      overflow-wrap: anywhere;
+    }
+    .shade-role {
+      font-size: clamp(18px, 3vw, 30px);
+      font-weight: 500;
+      opacity: 0.85;
+      max-width: 90vw;
+      overflow-wrap: anywhere;
+    }
+    .shade-narrative {
+      margin-top: 12px;
+      max-width: 60ch;
+      font-size: clamp(16px, 2.2vw, 22px);
+      line-height: 1.4;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      opacity: 0.92;
+    }
+    .shade-hint {
+      position: absolute;
+      bottom: 32px;
+      font-size: 14px;
+      opacity: 0.7;
+    }
+    .shade-role:empty,
+    .shade-narrative:empty { display: none; }
+
+    @media (prefers-reduced-motion: reduce) { .shade { transition: none; } }
+
     @media print { :host { display: none; } }
   `;
 
@@ -185,10 +292,15 @@
     text.append(name, role);
 
     notch.append(avatar, text);
-    shadow.append(style, frame, notch);
 
-    els = { frame, notch, avatar, name, role };
+    const narrative = document.createElement('div');
+    narrative.className = 'narrative';
+
+    shadow.append(style, frame, notch, narrative);
+
+    els = { frame, notch, avatar, name, role, narrative };
     watchForRemoval();
+    watchNarrativeHeight();
     watchFullscreen();
   }
 
@@ -223,6 +335,122 @@
     observer.observe(root, { childList: true });
   }
 
+  // Reserve room at the foot of the page for the narrative bar. Re-measured
+  // whenever the bar resizes (text wraps differently, the window narrows, the
+  // narrative is cleared), and dropped to nothing when the bar is hidden.
+  function watchNarrativeHeight() {
+    document.addEventListener('DOMContentLoaded', recheckSpace);
+    window.addEventListener('load', recheckSpace);
+    if (typeof ResizeObserver === 'undefined') return;
+    barObserver = new ResizeObserver(() => reserveSpace(els?.narrative.offsetHeight || 0));
+    barObserver.observe(els.narrative);
+  }
+
+  // Two kinds of page need different treatment:
+  //
+  //  - Ordinary documents scroll the viewport. Padding the bottom of <html> by
+  //    the bar's height lets the last of the content scroll clear of the bar.
+  //  - App shells (Dynamics 365, Power Apps, most SPAs) pin <html>/<body> to
+  //    the window height with overflow hidden and scroll inside a panel. Padding
+  //    does nothing there, so instead <html> and <body> are cut down to end at
+  //    the top of the bar, and the app lays itself out in the smaller box.
+  //    They are also made position:relative: Dynamics' #shell-container is
+  //    absolutely positioned with no positioned ancestor, so it sizes itself
+  //    to the window and would ignore the shorter <body> otherwise.
+  //
+  // Styles are set inline with !important so no page stylesheet can beat them.
+  // An observer watches the style attributes of <html> and <body> (and <body>
+  // arriving): it puts our styles back if the page rewrites them, and catches
+  // a page turning itself into an app shell after load -- Dynamics only sets
+  // overflow:hidden on <body> from script once the app has booted, well after
+  // DOMContentLoaded. The page's own inline values are restored on release.
+  function isAppShell() {
+    const hidden = (el) => el && /hidden|clip/.test(getComputedStyle(el).overflowY);
+    return hidden(document.documentElement) || hidden(document.body);
+  }
+
+  function spaceRules(px) {
+    const h = `calc(100vh - ${px}px)`;
+    return reserved.shell
+      ? [
+          [document.documentElement, 'height', h],
+          [document.documentElement, 'max-height', h],
+          [document.documentElement, 'position', 'relative'],
+          [document.body, 'height', h],
+          [document.body, 'max-height', h],
+          [document.body, 'position', 'relative']
+        ]
+      : [[document.documentElement, 'padding-bottom', `${px}px`]];
+  }
+
+  function applyReserved() {
+    for (const [el, prop, value] of spaceRules(reserved.px)) {
+      if (!el) continue;
+      const key = el === document.body ? 'body' : 'html';
+      const saved = (reserved.saved[key] ||= {});
+      if (!(prop in saved)) {
+        saved[prop] = [el.style.getPropertyValue(prop), el.style.getPropertyPriority(prop)];
+      }
+      // Only write when different, so our own writes don't re-trigger the
+      // observer in reserveSpace() in a loop.
+      if (el.style.getPropertyValue(prop) !== value || el.style.getPropertyPriority(prop) !== 'important') {
+        el.style.setProperty(prop, value, 'important');
+      }
+    }
+  }
+
+  function reserveSpace(px) {
+    if (!px) return releaseSpace();
+    if (!document.documentElement) return;
+    if (!reserved) {
+      reserved = { px, shell: false, saved: {}, observer: null };
+      reserved.observer = new MutationObserver(() => reserved && reserveSpace(reserved.px));
+    }
+    reserved.px = px;
+    // Our own rules never change overflow, so re-detecting with them in place
+    // is safe. A page can only move from ordinary to shell (once its CSS or
+    // <body> arrives), never back, so there is no flapping.
+    if (!reserved.shell && isAppShell()) {
+      restoreSaved();
+      reserved.shell = true;
+    }
+    applyReserved();
+    reserved.observer.disconnect();
+    reserved.observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['style'],
+      childList: true
+    });
+    if (document.body) {
+      reserved.observer.observe(document.body, { attributes: true, attributeFilter: ['style'] });
+    }
+  }
+
+  // At document_start there is no <body> or page CSS yet, so the first check
+  // can't spot an app shell. Look again once the page has loaded.
+  function recheckSpace() {
+    if (reserved) reserveSpace(reserved.px);
+  }
+
+  function restoreSaved() {
+    for (const [key, props] of Object.entries(reserved.saved)) {
+      const el = key === 'body' ? document.body : document.documentElement;
+      if (!el) continue;
+      for (const [prop, [value, priority]] of Object.entries(props)) {
+        if (value) el.style.setProperty(prop, value, priority);
+        else el.style.removeProperty(prop);
+      }
+    }
+    reserved.saved = {};
+  }
+
+  function releaseSpace() {
+    if (!reserved) return;
+    reserved.observer.disconnect();
+    restoreSaved();
+    reserved = null;
+  }
+
   // Entering fullscreen pushes that element into the top layer above us, so
   // re-promote to get back on top.
   function watchFullscreen() {
@@ -233,20 +461,94 @@
     if (current && host?.isConnected) promote();
   }
 
-  function renderAvatar(persona) {
-    const next = document.createElement(persona.avatar ? 'img' : 'span');
-    next.className = 'avatar';
+  function avatarEl(persona, className) {
+    const el = document.createElement(persona.avatar ? 'img' : 'span');
+    el.className = className;
     if (persona.avatar) {
-      next.src = persona.avatar;
-      next.alt = '';
+      el.src = persona.avatar;
+      el.alt = '';
     } else {
-      next.textContent = initials(persona.name);
+      el.textContent = initials(persona.name);
     }
+    return el;
+  }
+
+  function renderAvatar(persona) {
+    const next = avatarEl(persona, 'avatar');
     els.avatar.replaceWith(next);
     els.avatar = next;
   }
 
-  function apply(persona) {
+  // --- intro shade -----------------------------------------------------------
+
+  function showShade(persona) {
+    removeShade();
+
+    const el = document.createElement('div');
+    el.className = 'shade';
+    const text = (className, value) => {
+      const d = document.createElement('div');
+      d.className = className;
+      d.textContent = value || '';
+      return d;
+    };
+    el.append(
+      avatarEl(persona, 'shade-avatar'),
+      text('shade-name', persona.name),
+      text('shade-role', persona.role),
+      text('shade-narrative', persona.narrative),
+      text('shade-hint', persona.introClick ? 'Click anywhere to continue' : '')
+    );
+    el.addEventListener('click', dismissShade);
+    shadow.append(el);
+    shade = el;
+
+    // Capture phase, so the keys a presenter's clicker sends dismiss the shade
+    // without also reaching the page underneath.
+    document.addEventListener('keydown', onShadeKey, true);
+    if (!persona.introClick) shadeTimer = setTimeout(dismissShade, SHADE_HOLD);
+  }
+
+  function onShadeKey(e) {
+    if (e.key !== 'Escape' && e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    e.stopPropagation();
+    dismissShade();
+  }
+
+  function dismissShade() {
+    if (!shade || shade.classList.contains('out')) return;
+    clearTimeout(shadeTimer);
+    document.removeEventListener('keydown', onShadeKey, true);
+
+    const el = shade;
+    el.classList.add('out');
+    const done = () => {
+      el.remove();
+      if (shade === el) shade = null;
+    };
+    el.addEventListener('transitionend', done, { once: true });
+    setTimeout(done, SHADE_FADE + 100); // transitionend never fires under reduced motion
+
+    // Tell the worker the intro has been seen, so it doesn't come back on the
+    // next navigation.
+    try {
+      chrome.runtime.sendMessage({ type: 'INTRO_DONE' }).catch(() => {});
+    } catch {
+      // Context invalidated.
+    }
+  }
+
+  // Drop the shade on the spot, without telling the worker (deactivated, or
+  // being replaced by a fresh one).
+  function removeShade() {
+    clearTimeout(shadeTimer);
+    document.removeEventListener('keydown', onShadeKey, true);
+    shade?.remove();
+    shade = null;
+  }
+
+  function apply(persona, intro = false) {
     if (!persona) return clear();
     if (!host) build();
 
@@ -257,13 +559,17 @@
 
     els.name.textContent = persona.name || '';
     els.role.textContent = persona.role || '';
+    els.narrative.textContent = persona.narrative || '';
     renderAvatar(persona);
 
     attach();
+    if (intro) showShade(persona);
   }
 
   function clear() {
     current = null;
+    removeShade();
+    releaseSpace();
     if (!host) return;
     try {
       if (host.matches(':popover-open')) host.hidePopover();
@@ -274,13 +580,16 @@
   }
 
   function onMessage(msg) {
-    if (msg?.type === 'APPLY') apply(msg.persona);
+    if (msg?.type === 'APPLY') apply(msg.persona, msg.intro);
     else if (msg?.type === 'CLEAR') clear();
   }
 
   function destroy() {
     clear();
     observer?.disconnect();
+    barObserver?.disconnect();
+    document.removeEventListener('DOMContentLoaded', recheckSpace);
+    window.removeEventListener('load', recheckSpace);
     document.removeEventListener('fullscreenchange', onFullscreen);
     try {
       chrome.runtime.onMessage.removeListener(onMessage);
@@ -299,7 +608,7 @@
   chrome.runtime
     .sendMessage({ type: 'GET_STATE' })
     .then((res) => {
-      if (res?.persona) apply(res.persona);
+      if (res?.persona) apply(res.persona, res.intro);
     })
     .catch(() => {});
 })();
